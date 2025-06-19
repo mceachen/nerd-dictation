@@ -14,6 +14,7 @@ Features
 - **Fast response**: Keeps model loaded in memory using suspend/resume
 - **Auto-recovery**: Automatically restarts if nerd-dictation crashes
 - **Device selection**: Support for specific audio input devices
+- **Instance management**: Prevents duplicate processes and cleans up orphaned instances
 
 Installation
 ------------
@@ -69,16 +70,25 @@ The script uses the following settings:
 Sound Files
 -----------
 
-The script looks for audio feedback files in ``sounds/`` directory:
+The script uses audio feedback to indicate different states:
 
-- ``sounds/start.wav``: Played when model is ready and when dictation starts
-- ``sounds/stop.wav``: Played when dictation stops
-- ``sounds/error.wav``: Played when action cannot be performed (e.g., model not ready)
+- ``sounds/ready.wav``: Played once when the model finishes loading (startup complete)
+- ``sounds/start.wav``: Played when dictation is activated (microphone on)
+- ``sounds/stop.wav``: Played when dictation is suspended (microphone off)
+- ``sounds/error.wav``: Played when errors occur:
+  
+  - Model not ready yet (double-tap before startup completes)
+  - Process crashes or fails to start
+  - Out of memory errors
 
 If these files don't exist, the script will run silently.
 
+**Startup sequence**: When you first run the script, you'll see "Waiting for model to load..." 
+and after a few seconds (depending on model size), you'll hear the ready sound indicating 
+the system is ready for dictation.
+
 The included sounds are derived from Pixabay and are free for use under the Pixabay Content
-License. See ``sounds/LICENSE`` for attribution details.
+License. See ``sounds/LICENSE.md`` for attribution details.
 
 Troubleshooting
 ---------------
@@ -105,14 +115,18 @@ Technical Details
 
 The hotkey script:
 
-1. Starts nerd-dictation in suspended state when launched
-2. Monitors keyboard events for double-tap detection
-3. Sends resume/suspend commands instead of begin/end for instant response
-4. Keeps the speech recognition model loaded in memory
-5. Handles process crashes with automatic recovery
+1. **Startup safety**: Checks for and cleans up any existing nerd-dictation processes
+2. **Process management**: Prevents multiple instances of hotkey.py from running
+3. **Model loading**: Starts nerd-dictation in suspended state and monitors output
+4. **Ready detection**: Plays a sound when model is loaded and ready for use
+5. **Keyboard monitoring**: Uses double-tap detection to avoid accidental activation
+6. **Fast toggling**: Sends resume/suspend commands for instant response
+7. **Error handling**: Plays error sounds and provides clear messages on failures
+8. **Memory protection**: Monitors for out-of-memory conditions
+9. **Clean shutdown**: Properly stops processes and removes PID files on exit
 
 This approach provides near-instant activation compared to loading the model
-each time dictation starts.
+each time dictation starts, while preventing system resource issues.
 
 Desktop Autostart
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
