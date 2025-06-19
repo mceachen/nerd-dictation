@@ -42,13 +42,20 @@ class PushToTalkController:
         self.activation_key = activation_key.lower()  # Key to double-tap
         self.script_dir = Path(__file__).parent.absolute()
 
+        # Check for existing instances
+        self._check_existing_instances()
+
         # Try to find nerd-dictation executable
         self.nerd_dictation = self._find_nerd_dictation()
 
         # Use current Python interpreter (works with venv, system python, etc.)
         self.python_exe = sys.executable
 
+        # PID file for tracking
+        self.pid_file = Path.home() / ".local" / "share" / "nerd-dictation-hotkey.pid"
+
         # Sound files
+        self.ready_sound = self.script_dir / "sounds" / "ready.wav"
         self.start_sound = self.script_dir / "sounds" / "start.wav"
         self.stop_sound = self.script_dir / "sounds" / "stop.wav"
         self.error_sound = self.script_dir / "sounds" / "error.wav"  # Not ready/error sound
@@ -59,6 +66,36 @@ class PushToTalkController:
         self.is_ready = False  # Track if model is loaded
         self.last_tap_time = {}  # Track last tap time for each key
         self.double_tap_timeout = 0.3  # 300ms for double tap
+
+    def _check_existing_instances(self):
+        """Check for and clean up existing instances."""
+        # Clean up any orphaned nerd-dictation processes
+        try:
+            # Find existing nerd-dictation processes
+            result = subprocess.run(["pgrep", "-f", "nerd-dictation begin"], capture_output=True, text=True)
+            if result.stdout.strip():
+                pids = result.stdout.strip().split("\n")
+                print(f"Found {len(pids)} existing nerd-dictation process(es), cleaning up...")
+                for pid in pids:
+                    try:
+                        subprocess.run(["kill", "-9", pid], check=False)
+                    except:
+                        pass
+                time.sleep(1)
+        except:
+            pass
+
+        # Check for existing hotkey.py instances
+        try:
+            result = subprocess.run(["pgrep", "-f", "python.*hotkey.py"], capture_output=True, text=True)
+            if result.stdout.strip():
+                pids = [p for p in result.stdout.strip().split("\n") if p != str(os.getpid())]
+                if pids:
+                    print(f"ERROR: hotkey.py is already running (PID: {pids[0]})")
+                    print("Please stop the existing instance first")
+                    sys.exit(1)
+        except:
+            pass
 
     def _find_nerd_dictation(self) -> Path:
         """Find nerd-dictation executable in various locations."""
@@ -85,7 +122,7 @@ class PushToTalkController:
             print("Model not ready yet, please wait...")
             self.play_sound(self.error_sound)
             return
-            
+
         if self.is_active:
             self.is_active = False
             self.suspend_dictation()
@@ -144,15 +181,11 @@ class PushToTalkController:
         try:
             # Capture output to monitor for "Model loaded" message
             self.dictation_process = subprocess.Popen(
-                cmd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
             )
             print(f"Started nerd-dictation process (PID: {self.dictation_process.pid})")
             print("Waiting for model to load...")
-            
+
             # Start thread to monitor output
             def monitor_output():
                 for line in self.dictation_process.stdout:
@@ -161,19 +194,27 @@ class PushToTalkController:
                         self.is_ready = True
                         print("Model is ready!")
                         # Play a ready sound
-                        self.play_sound(self.start_sound)
+                        self.play_sound(self.ready_sound)
                         break
-            
+                    # Check for memory warnings
+                    if "MemoryError" in line or "out of memory" in line.lower():
+                        print("ERROR: Out of memory! Stopping...")
+                        self.play_sound(self.error_sound)
+                        self.stop_nerd_dictation()
+                        sys.exit(1)
+
             monitor_thread = threading.Thread(target=monitor_output, daemon=True)
             monitor_thread.start()
-            
+
             # Wait a bit to see if it crashes immediately
             time.sleep(1)
             if self.dictation_process.poll() is not None:
                 print(f"ERROR: nerd-dictation process died with exit code: {self.dictation_process.returncode}")
+                self.play_sound(self.error_sound)
                 sys.exit(1)
         except Exception as e:
             print(f"Error starting nerd-dictation: {e}")
+            self.play_sound(self.error_sound)
             sys.exit(1)
 
     def resume_dictation(self):
@@ -269,24 +310,36 @@ class PushToTalkController:
 
     def run(self):
         """Start the push-to-talk controller."""
-        # Start nerd-dictation in suspended state
-        self.start_nerd_dictation()
+        # Write PID file
+        self.pid_file.parent.mkdir(parents=True, exist_ok=True)
+        self.pid_file.write_text(str(os.getpid()))
 
-        key_display = self.activation_key.replace("_", " ").title()
-        print(f"\nHotkey ready. Double-tap {key_display} to start/stop dictation.")
-        print("Press Ctrl+C to exit.")
+        try:
+            # Start nerd-dictation in suspended state
+            self.start_nerd_dictation()
 
-        # Start listening for keyboard events
-        with keyboard.Listener(on_press=self.on_press) as listener:
+            key_display = self.activation_key.replace("_", " ").title()
+            print(f"\nHotkey ready. Double-tap {key_display} to start/stop dictation.")
+            print("Press Ctrl+C to exit.")
+
+            # Start listening for keyboard events
+            with keyboard.Listener(on_press=self.on_press) as listener:
+                try:
+                    listener.join()
+                except KeyboardInterrupt:
+                    pass
+        finally:
+            # Cleanup
+            print("\nCleaning up...")
+            self.stop_nerd_dictation()
+
+            # Remove PID file
             try:
-                listener.join()
-            except KeyboardInterrupt:
+                self.pid_file.unlink()
+            except:
                 pass
 
-        # Cleanup
-        self.stop_nerd_dictation()
-
-        print("\nPush-to-talk controller stopped.")
+            print("Hotkey controller stopped.")
 
 
 def main():
