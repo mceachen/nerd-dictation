@@ -23,7 +23,7 @@ Installation
 
    .. code-block:: bash
 
-      pip install pynput
+      uv pip install pynput
 
 2. Ensure you have audio playback support (PipeWire or PulseAudio)
 

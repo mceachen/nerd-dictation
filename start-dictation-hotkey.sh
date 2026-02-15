@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # PipeWire: pw-cli list-objects | grep -B1 -A5 "Audio/Source"
 # PipeWire: wpctl status (look under Audio > Sources)
 # PulseAudio: pactl list sources | grep -A2 "Name:"
-USB_DEVICE="alsa_input.usb-046d_HD_Pro_Webcam_C920_F3E6DAF-02.analog-stereo"
+USB_DEVICE="alsa_input.usb-Lumina_Industries__Inc._Lumina_Camera_-_Raw_SN0001-02.analog-stereo"
 
 ACTIVATION_KEY="caps_lock"  # Change to alt_r, alt_gr, or menu if desired
 LOG_FILE="$HOME/.local/share/nerd-dictation-hotkey.log"
@@ -34,32 +34,13 @@ fi
 # Change to script directory
 cd "$SCRIPT_DIR" || exit 1
 
-# Check if virtual environment exists and has pynput
-if [ -d ".venv" ]; then
-    log_message "Found virtual environment, checking for pynput..."
-    if .venv/bin/python -c "import pynput" 2>/dev/null; then
-        log_message "Activating virtual environment..."
-        source .venv/bin/activate
-    else
-        log_message "Virtual environment missing pynput, installing..."
-        .venv/bin/pip install pynput >> "$LOG_FILE" 2>&1
-        source .venv/bin/activate
-    fi
-else
-    log_message "No virtual environment found, checking system Python"
-    if ! python3 -c "import pynput" 2>/dev/null; then
-        log_message "ERROR: pynput not installed. Please run: pip install pynput"
-        exit 1
-    fi
-fi
-
 # Start the hotkey script
 log_message "Starting nerd-dictation hotkey listener..."
 log_message "Device: $USB_DEVICE"
 log_message "Activation key: $ACTIVATION_KEY"
 
 # Run in background and redirect output to log
-nohup python hotkey.py --device "$USB_DEVICE" --key "$ACTIVATION_KEY" >> "$LOG_FILE" 2>&1 &
+nohup uv run --with pynput --with vosk python hotkey.py --device "$USB_DEVICE" --key "$ACTIVATION_KEY" >> "$LOG_FILE" 2>&1 &
 
 # Get the PID
 PID=$!

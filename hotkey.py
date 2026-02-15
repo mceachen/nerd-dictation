@@ -32,7 +32,7 @@ from typing import Optional
 try:
     from pynput import keyboard
 except ImportError:
-    print("Error: pynput module not found. Install with: pip install pynput")
+    print("Error: pynput module not found. Install with: uv pip install pynput")
     sys.exit(1)
 
 
